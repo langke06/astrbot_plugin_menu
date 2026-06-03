@@ -12,7 +12,7 @@ QUERY_URL = "http://nbwk.online/api/index.php?act=cd"
     "astrbot_plugin_menu",
     "langke06",
     "菜单插件，支持下单、查进度和关键词监控功能",
-    "1.2.4",
+    "1.2.5",
 )
 class MenuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -221,9 +221,7 @@ class MenuPlugin(Star):
 发送者: {sender}
 群聊: {group_id}
 消息内容:
-{message_text[:200]}{'...' if len(message_text) > 200 else ''}
-
-时间: {event.message_obj.timestamp}"""
+{message_text[:200]}{'...' if len(message_text) > 200 else ''}"""
 
             try:
                 # 获取当前消息的 umo 作为参考
@@ -245,14 +243,10 @@ class MenuPlugin(Star):
                     # 默认作为用户ID发送（私聊）
                     umo = f"{platform_name}:FriendMessage:{self.alert_target}"
                 
-                logger.info(f"发送警告到UMO: {umo}")
-                
                 # 使用 context.send_message 发送
                 from astrbot.api.event import MessageChain
                 message_chain = MessageChain().message(alert_msg)
                 await self.context.send_message(umo, message_chain)
-                
-                logger.info(f"关键词警告已发送: {matched_keywords} 到 {umo}")
             except Exception as e:
                 logger.error(f"发送关键词警告失败: {e}")
 

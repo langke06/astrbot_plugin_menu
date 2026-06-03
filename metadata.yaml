@@ -1,5 +1,5 @@
 name: astrbot_plugin_menu
 desc: 菜单插件，支持下单、查进度和关键词监控功能
 author: langke06
-version: 1.2.4
+version: 1.2.5
 repo: https://github.com/langke06/astrbot_plugin_menu
