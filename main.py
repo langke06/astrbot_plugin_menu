@@ -3,6 +3,7 @@ import json
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
+from astrbot.core.platform.astr_message_event import MessageSesion
 
 API_BASE = "http://dilmurat.icu/api"
 QUERY_URL = "http://nbwk.online/api/index.php?act=cd"
@@ -12,7 +13,7 @@ QUERY_URL = "http://nbwk.online/api/index.php?act=cd"
     "astrbot_plugin_menu",
     "langke06",
     "菜单插件，支持下单、查进度和关键词监控功能",
-    "1.2.0",
+    "1.2.1",
 )
 class MenuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -226,17 +227,37 @@ class MenuPlugin(Star):
 时间: {event.message_obj.timestamp}"""
 
             try:
+                # 获取当前消息的适配器
+                adapter = event.platform_adapter
+                
                 # 解析目标
                 if self.alert_target.startswith("group:"):
-                    target = self.alert_target.replace("group:", "")
-                    await self.context.send_message(target, event.plain_result(alert_msg))
+                    target_id = self.alert_target.replace("group:", "")
+                    # 构建群消息目标
+                    session = MessageSesion(
+                        platform_name=adapter.name(),
+                        session_id=target_id,
+                        session_type=MessageSesion.GROUP
+                    )
                 elif self.alert_target.startswith("qq:"):
-                    target = self.alert_target.replace("qq:", "")
-                    await self.context.send_message(target, event.plain_result(alert_msg))
+                    target_id = self.alert_target.replace("qq:", "")
+                    # 构建私聊消息目标
+                    session = MessageSesion(
+                        platform_name=adapter.name(),
+                        session_id=target_id,
+                        session_type=MessageSesion.PRIVATE
+                    )
                 else:
-                    # 默认作为用户ID发送
-                    await self.context.send_message(self.alert_target, event.plain_result(alert_msg))
-
+                    # 默认作为用户ID发送（私聊）
+                    session = MessageSesion(
+                        platform_name=adapter.name(),
+                        session_id=self.alert_target,
+                        session_type=MessageSesion.PRIVATE
+                    )
+                
+                # 发送消息
+                await adapter.send_msg(session, event.plain_result(alert_msg))
+                
                 logger.info(f"关键词警告已发送: {matched_keywords}")
             except Exception as e:
                 logger.error(f"发送关键词警告失败: {e}")
