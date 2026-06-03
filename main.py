@@ -12,7 +12,7 @@ QUERY_URL = "http://nbwk.online/api/index.php?act=cd"
     "astrbot_plugin_menu",
     "langke06",
     "菜单插件，支持下单和查进度功能",
-    "1.1.0",
+    "1.1.1",
 )
 class MenuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -196,79 +196,161 @@ class MenuPlugin(Star):
             return
         
         try:
+            # ==================== 搜索商品 ====================
             if step == "search_goods":
-                await self._handle_goods_search(event, session, message)
+                if message.isdigit():
+                    # 直接输入商品ID
+                    goods_id = int(message)
+                    async for result in self._load_goods_detail(event, session, goods_id):
+                        yield result
+                    return
+                
+                # 搜索商品
+                url = f"{API_BASE}/goods/search"
+                async with aiohttp.ClientSession() as http_session:
+                    async with http_session.get(url, params={"keyword": message}, timeout=30) as resp:
+                        result = await resp.json()
+                
+                if result.get("code") != 200:
+                    yield event.plain_result("❌ 搜索失败，请重试或输入「取消」退出")
+                    return
+                
+                goods_list = result.get("data", [])
+                if not goods_list:
+                    yield event.plain_result("❌ 未找到相关商品，请尝试其他关键词")
+                    return
+                
+                session["goods_list"] = goods_list
+                session["step"] = "select_goods"
+                
+                reply = "📦 找到以下商品，请回复编号选择：\n\n"
+                for i, goods in enumerate(goods_list, 1):
+                    price = goods.get("price", "N/A")
+                    reply += f"{i}. {goods['name']} - ¥{price}\n"
+                reply += "\n💡 回复数字选择商品"
+                
+                yield event.plain_result(reply)
+            
+            # ==================== 选择商品 ====================
             elif step == "select_goods":
-                await self._handle_goods_select(event, session, message)
+                if not message.isdigit():
+                    yield event.plain_result("❌ 请输入商品编号（数字）")
+                    return
+                
+                choice = int(message) - 1
+                goods_list = session.get("goods_list", [])
+                
+                if choice < 0 or choice >= len(goods_list):
+                    yield event.plain_result(f"❌ 无效选择，请输入 1-{len(goods_list)} 之间的数字")
+                    return
+                
+                selected_goods = goods_list[choice]
+                async for result in self._load_goods_detail(event, session, selected_goods["id"]):
+                    yield result
+            
+            # ==================== 填写字段 ====================
             elif step == "fill_inputs":
-                await self._handle_fill_inputs(event, session, message)
+                input_fields = session["input_fields"]
+                current_idx = session["current_input_idx"]
+                field = input_fields[current_idx]
+                
+                session["inputs"][str(field["index"])] = message
+                session["current_input_idx"] += 1
+                
+                async for result in self._ask_next_input(event, session):
+                    yield result
+            
+            # ==================== 选择课程 ====================
             elif step == "select_course":
-                await self._handle_course_select(event, session, message)
+                if not message.isdigit():
+                    yield event.plain_result("❌ 请输入课程编号（数字）")
+                    return
+                
+                choice = int(message) - 1
+                courses = session.get("courses", [])
+                
+                if choice < 0 or choice >= len(courses):
+                    yield event.plain_result(f"❌ 无效选择，请输入 1-{len(courses)} 之间的数字")
+                    return
+                
+                selected_course = courses[choice]
+                session["course_id"] = selected_course.get("id", "")
+                session["course_name"] = selected_course.get("name", "")
+                session["step"] = "confirm_order"
+                
+                goods_detail = session["goods_detail"]
+                reply = f"""📋 订单确认
+
+商品：{goods_detail.get('name', '未知')}
+课程：{session['course_name']}
+
+💳 请选择支付方式：
+1. 微信支付
+2. 支付宝
+3. 余额支付
+
+请回复数字（1/2/3）"""
+                
+                yield event.plain_result(reply)
+            
+            # ==================== 确认订单 ====================
             elif step == "confirm_order":
-                await self._handle_confirm_order(event, session, message)
+                pay_map = {"1": "wxpay", "2": "alipay", "3": "type_money"}
+                
+                if message not in pay_map:
+                    yield event.plain_result("❌ 无效选择，请回复 1、2 或 3")
+                    return
+                
+                pay_type = pay_map[message]
+                
+                yield event.plain_result("📝 正在创建订单，请稍候...")
+                
+                url = f"{API_BASE}/order/create"
+                data = {
+                    "goods_id": session["goods_id"],
+                    "pay": pay_type,
+                    "num": 1,
+                    "inputs": json.dumps(session["inputs"]),
+                    "course_id": session["course_id"],
+                    "course_name": session["course_name"]
+                }
+                
+                async with aiohttp.ClientSession() as http_session:
+                    async with http_session.post(url, data=data, timeout=30) as resp:
+                        result = await resp.json()
+                
+                if result.get("code") == 201:
+                    order_no = result.get("out_trade_no")
+                    pay_url = result.get("url")
+                    
+                    reply = f"""✅ 订单创建成功！
+
+📦 订单号：{order_no}
+📚 课程：{session['course_name']}
+
+💳 支付链接：
+{pay_url}
+
+请点击链接完成支付
+支付完成后服务将自动开始"""
+                    
+                    yield event.plain_result(reply)
+                else:
+                    yield event.plain_result(f"❌ 下单失败：{result.get('msg', '未知错误')}")
+                
+                if user_id in self.user_sessions:
+                    del self.user_sessions[user_id]
+                    
         except Exception as e:
             logger.error(f"下单流程错误: {e}")
             yield event.plain_result(f"❌ 处理出错: {str(e)}\n请发送「取消」后重新开始")
 
-    async def _api_request(self, method: str, endpoint: str, **kwargs):
-        """发送API请求"""
-        url = f"{API_BASE}{endpoint}"
-        async with aiohttp.ClientSession() as session:
-            if method == "GET":
-                async with session.get(url, **kwargs, timeout=30) as resp:
-                    return await resp.json()
-            else:
-                async with session.post(url, **kwargs, timeout=30) as resp:
-                    return await resp.json()
-
-    async def _handle_goods_search(self, event, session, message):
-        """处理商品搜索"""
-        if message.isdigit():
-            goods_id = int(message)
-            await self._load_goods_detail(event, session, goods_id)
-            return
-        
-        result = await self._api_request("GET", "/goods/search", params={"keyword": message})
-        
-        if result.get("code") != 200:
-            yield event.plain_result("❌ 搜索失败，请重试或输入「取消」退出")
-            return
-        
-        goods_list = result.get("data", [])
-        if not goods_list:
-            yield event.plain_result("❌ 未找到相关商品，请尝试其他关键词")
-            return
-        
-        session["goods_list"] = goods_list
-        session["step"] = "select_goods"
-        
-        reply = "📦 找到以下商品，请回复编号选择：\n\n"
-        for i, goods in enumerate(goods_list, 1):
-            price = goods.get("price", "N/A")
-            reply += f"{i}. {goods['name']} - ¥{price}\n"
-        reply += "\n💡 回复数字选择商品"
-        
-        yield event.plain_result(reply)
-
-    async def _handle_goods_select(self, event, session, message):
-        """处理商品选择"""
-        if not message.isdigit():
-            yield event.plain_result("❌ 请输入商品编号（数字）")
-            return
-        
-        choice = int(message) - 1
-        goods_list = session.get("goods_list", [])
-        
-        if choice < 0 or choice >= len(goods_list):
-            yield event.plain_result(f"❌ 无效选择，请输入 1-{len(goods_list)} 之间的数字")
-            return
-        
-        selected_goods = goods_list[choice]
-        await self._load_goods_detail(event, session, selected_goods["id"])
-
     async def _load_goods_detail(self, event, session, goods_id):
-        """加载商品详情"""
-        result = await self._api_request("GET", "/goods/detail", params={"id": goods_id})
+        """加载商品详情 - 异步生成器"""
+        url = f"{API_BASE}/goods/detail"
+        async with aiohttp.ClientSession() as http_session:
+            async with http_session.get(url, params={"id": goods_id}, timeout=30) as resp:
+                result = await resp.json()
         
         if result.get("code") != 200:
             yield event.plain_result("❌ 获取商品详情失败")
@@ -303,15 +385,48 @@ class MenuPlugin(Star):
         session["current_input_idx"] = 0
         session["step"] = "fill_inputs"
         
-        await self._ask_next_input(event, session)
+        async for result in self._ask_next_input(event, session):
+            yield result
 
     async def _ask_next_input(self, event, session):
-        """询问下一个输入字段"""
+        """询问下一个输入字段 - 异步生成器"""
         input_fields = session["input_fields"]
         current_idx = session["current_input_idx"]
         
         if current_idx >= len(input_fields):
-            await self._search_courses(event, session)
+            # 所有字段填写完成，搜索课程
+            yield event.plain_result("🔍 正在查询课程列表，请稍候...")
+            
+            goods_id = session["goods_id"]
+            inputs = session["inputs"]
+            
+            url = f"{API_BASE}/goods/courses"
+            async with aiohttp.ClientSession() as http_session:
+                async with http_session.get(url, params={
+                    "goods_id": goods_id,
+                    "inputs": json.dumps(inputs)
+                }, timeout=30) as resp:
+                    result = await resp.json()
+            
+            if result.get("code") != 200 or not result.get("data"):
+                yield event.plain_result("❌ 查询课程失败，请检查账号密码是否正确")
+                session["step"] = "fill_inputs"
+                session["current_input_idx"] = 0
+                session["inputs"] = {}
+                async for r in self._ask_next_input(event, session):
+                    yield r
+                return
+            
+            courses = result.get("data", [])
+            session["courses"] = courses
+            session["step"] = "select_course"
+            
+            reply = "📚 找到以下课程，请回复编号选择：\n\n"
+            for i, course in enumerate(courses, 1):
+                reply += f"{i}. {course.get('name', '未知课程')}\n"
+            reply += "\n💡 回复数字选择课程"
+            
+            yield event.plain_result(reply)
             return
         
         field = input_fields[current_idx]
@@ -325,133 +440,6 @@ class MenuPlugin(Star):
             reply = f"📝 请输入{field['title']}："
         
         yield event.plain_result(reply)
-
-    async def _handle_fill_inputs(self, event, session, message):
-        """处理字段填写"""
-        input_fields = session["input_fields"]
-        current_idx = session["current_input_idx"]
-        field = input_fields[current_idx]
-        
-        session["inputs"][str(field["index"])] = message
-        session["current_input_idx"] += 1
-        
-        await self._ask_next_input(event, session)
-
-    async def _search_courses(self, event, session):
-        """搜索课程"""
-        yield event.plain_result("🔍 正在查询课程列表，请稍候...")
-        
-        goods_id = session["goods_id"]
-        inputs = session["inputs"]
-        
-        result = await self._api_request(
-            "GET", 
-            "/goods/courses",
-            params={
-                "goods_id": goods_id,
-                "inputs": json.dumps(inputs)
-            }
-        )
-        
-        if result.get("code") != 200 or not result.get("data"):
-            yield event.plain_result("❌ 查询课程失败，请检查账号密码是否正确")
-            session["step"] = "fill_inputs"
-            session["current_input_idx"] = 0
-            session["inputs"] = {}
-            await self._ask_next_input(event, session)
-            return
-        
-        courses = result.get("data", [])
-        session["courses"] = courses
-        session["step"] = "select_course"
-        
-        reply = "📚 找到以下课程，请回复编号选择：\n\n"
-        for i, course in enumerate(courses, 1):
-            reply += f"{i}. {course.get('name', '未知课程')}\n"
-        reply += "\n💡 回复数字选择课程"
-        
-        yield event.plain_result(reply)
-
-    async def _handle_course_select(self, event, session, message):
-        """处理课程选择"""
-        if not message.isdigit():
-            yield event.plain_result("❌ 请输入课程编号（数字）")
-            return
-        
-        choice = int(message) - 1
-        courses = session.get("courses", [])
-        
-        if choice < 0 or choice >= len(courses):
-            yield event.plain_result(f"❌ 无效选择，请输入 1-{len(courses)} 之间的数字")
-            return
-        
-        selected_course = courses[choice]
-        session["course_id"] = selected_course.get("id", "")
-        session["course_name"] = selected_course.get("name", "")
-        session["step"] = "confirm_order"
-        
-        goods_detail = session["goods_detail"]
-        reply = f"""📋 订单确认
-
-商品：{goods_detail.get('name', '未知')}
-课程：{session['course_name']}
-
-💳 请选择支付方式：
-1. 微信支付
-2. 支付宝
-3. 余额支付
-
-请回复数字（1/2/3）"""
-        
-        yield event.plain_result(reply)
-
-    async def _handle_confirm_order(self, event, session, message):
-        """处理订单确认和创建"""
-        pay_map = {"1": "wxpay", "2": "alipay", "3": "type_money"}
-        
-        if message not in pay_map:
-            yield event.plain_result("❌ 无效选择，请回复 1、2 或 3")
-            return
-        
-        pay_type = pay_map[message]
-        
-        yield event.plain_result("📝 正在创建订单，请稍候...")
-        
-        result = await self._api_request(
-            "POST",
-            "/order/create",
-            data={
-                "goods_id": session["goods_id"],
-                "pay": pay_type,
-                "num": 1,
-                "inputs": json.dumps(session["inputs"]),
-                "course_id": session["course_id"],
-                "course_name": session["course_name"]
-            }
-        )
-        
-        if result.get("code") == 201:
-            order_no = result.get("out_trade_no")
-            pay_url = result.get("url")
-            
-            reply = f"""✅ 订单创建成功！
-
-📦 订单号：{order_no}
-📚 课程：{session['course_name']}
-
-💳 支付链接：
-{pay_url}
-
-请点击链接完成支付
-支付完成后服务将自动开始"""
-            
-            yield event.plain_result(reply)
-        else:
-            yield event.plain_result(f"❌ 下单失败：{result.get('msg', '未知错误')}")
-        
-        user_id = event.get_sender_id()
-        if user_id in self.user_sessions:
-            del self.user_sessions[user_id]
 
     async def terminate(self):
         '''插件卸载时调用'''
