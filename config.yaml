@@ -1,0 +1,6 @@
+# 菜单插件配置
+# 将此文件复制为 config.yaml 并填写实际配置
+
+# 查进度功能的API地址
+# 示例：http://your-domain.com/api/index.php
+query_url: ""
