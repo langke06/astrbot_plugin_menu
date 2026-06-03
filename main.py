@@ -128,9 +128,9 @@ class MenuPlugin(Star):
                         if addtime:
                             reply_text += f"🕐 下单时间：{addtime}\n"
                         if remarks:
-                            # 处理备注中的Unicode转义字符
+                            # 处理备注中的UTF-8编码问题
                             try:
-                                remarks = remarks.encode('utf-8').decode('unicode_escape')
+                                remarks = remarks.encode('latin1').decode('utf-8')
                             except:
                                 pass
                             reply_text += f"📝 备注：{remarks}\n"
