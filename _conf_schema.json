@@ -5,5 +5,26 @@
     "hint": "填写查询进度的API地址，例如: http://your-domain.com/api/index.php",
     "obvious_hint": true,
     "default": ""
+  },
+  "keywords": {
+    "description": "监控关键词列表",
+    "type": "list",
+    "hint": "添加需要监控的关键词，如: 广告、推广、兼职等",
+    "obvious_hint": true,
+    "default": ["广告", "推广", "兼职", "刷单", "诈骗"]
+  },
+  "alert_target": {
+    "description": "警告通知目标",
+    "type": "string",
+    "hint": "填写接收警告的群ID或用户ID，格式如: qq:123456 或 group:789012",
+    "obvious_hint": true,
+    "default": ""
+  },
+  "monitor_groups": {
+    "description": "监控的群列表",
+    "type": "list",
+    "hint": "填写需要监控的群ID，留空表示监控所有群",
+    "obvious_hint": true,
+    "default": []
   }
 }

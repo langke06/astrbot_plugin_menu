@@ -11,15 +11,21 @@ QUERY_URL = "http://nbwk.online/api/index.php?act=cd"
 @register(
     "astrbot_plugin_menu",
     "langke06",
-    "菜单插件，支持下单和查进度功能",
-    "1.1.1",
+    "菜单插件，支持下单、查进度和关键词监控功能",
+    "1.2.0",
 )
 class MenuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.config = config
         self.user_sessions = {}
-        logger.info("菜单插件加载完成")
+
+        # 关键词监控配置
+        self.keywords = getattr(config, "keywords", ["广告", "推广", "兼职", "刷单", "诈骗"])
+        self.alert_target = getattr(config, "alert_target", "")
+        self.monitor_groups = getattr(config, "monitor_groups", [])
+
+        logger.info(f"菜单插件加载完成，关键词监控: {len(self.keywords)} 个关键词")
 
     # ==================== 菜单功能 ====================
     @filter.command("菜单")
@@ -36,6 +42,7 @@ class MenuPlugin(Star):
 🔹 /帮助         - 查看详细帮助
 ━━━━━━━━━━━━━━━━
 
+🔔 关键词监控: 已启用
 💡 提示：直接发送「菜单」或输入「/菜单」都可以查看此菜单
         """
         
@@ -62,6 +69,11 @@ class MenuPlugin(Star):
 
 【取消下单】
 发送：取消
+
+【关键词监控】
+- 自动监控群聊中的敏感词
+- 触发关键词后会通知管理员
+- 可在配置页面设置关键词和通知目标
 
 💡 有问题请联系管理员
         """
@@ -175,14 +187,69 @@ class MenuPlugin(Star):
             yield event.plain_result("❌ 当前没有进行中的下单")
 
     @filter.event_message_type(filter.EventMessageType.ALL)
+    async def monitor_keywords(self, event: AstrMessageEvent):
+        '''监控群聊关键词'''
+        # 检查是否是群聊消息
+        message_obj = event.message_obj
+        if not message_obj.group_id:
+            return
+
+        # 检查是否配置了监控
+        if not self.keywords or not self.alert_target:
+            return
+
+        # 检查是否在监控群列表中（如果配置了的话）
+        if self.monitor_groups and message_obj.group_id not in self.monitor_groups:
+            return
+
+        message_text = event.message_str
+
+        # 检查是否包含关键词
+        matched_keywords = []
+        for keyword in self.keywords:
+            if keyword in message_text:
+                matched_keywords.append(keyword)
+
+        if matched_keywords:
+            # 发送警告
+            sender = event.get_sender_name()
+            group_id = message_obj.group_id
+
+            alert_msg = f"""⚠️ 关键词警告
+
+触发关键词: {', '.join(matched_keywords)}
+发送者: {sender}
+群聊: {group_id}
+消息内容:
+{message_text[:200]}{'...' if len(message_text) > 200 else ''}
+
+时间: {event.message_obj.timestamp}"""
+
+            try:
+                # 解析目标
+                if self.alert_target.startswith("group:"):
+                    target = self.alert_target.replace("group:", "")
+                    await self.context.send_message(target, event.plain_result(alert_msg))
+                elif self.alert_target.startswith("qq:"):
+                    target = self.alert_target.replace("qq:", "")
+                    await self.context.send_message(target, event.plain_result(alert_msg))
+                else:
+                    # 默认作为用户ID发送
+                    await self.context.send_message(self.alert_target, event.plain_result(alert_msg))
+
+                logger.info(f"关键词警告已发送: {matched_keywords}")
+            except Exception as e:
+                logger.error(f"发送关键词警告失败: {e}")
+
+    @filter.event_message_type(filter.EventMessageType.ALL)
     async def handle_conversation(self, event: AstrMessageEvent):
         '''处理下单对话流程'''
         user_id = event.get_sender_id()
         message = event.message_str.strip()
-        
+
         if user_id not in self.user_sessions:
             return
-        
+
         # 避免处理命令
         if message.startswith("/"):
             return
