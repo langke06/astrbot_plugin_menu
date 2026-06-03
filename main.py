@@ -85,7 +85,7 @@ class MenuPlugin(Star):
                 url = "http://nbwk.online/api/index.php?act=cd"
                 
                 # 使用 URL 编码格式数据
-                data = {"userName": phone}
+                data = {"username": phone}
                 
                 logger.info(f"请求URL: {url}, data: {data}")
                 async with session.post(url, data=data, timeout=30) as resp:
