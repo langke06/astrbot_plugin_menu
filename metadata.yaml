@@ -1,5 +1,5 @@
 name: astrbot_plugin_menu
 desc: 一个简单的菜单插件，用户发送"菜单"时显示功能列表，支持查进度功能
 author: langke06
-version: 1.0.3
+version: 1.0.4
 repo: https://github.com/langke06/astrbot_plugin_menu

@@ -1,0 +1,9 @@
+{
+  "query_url": {
+    "description": "查进度API地址",
+    "type": "string",
+    "hint": "填写查询进度的API地址，例如: http://your-domain.com/api/index.php",
+    "obvious_hint": true,
+    "default": ""
+  }
+}

@@ -1,42 +1,23 @@
 import aiohttp
 import json
-import os
-import yaml
+from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
-from astrbot.api.star import Context, Star
-from astrbot.api import logger
+from astrbot.api.star import Context, Star, register
 
+
+@register(
+    "astrbot_plugin_menu",
+    "langke06",
+    "一个简单的菜单插件，用户发送'菜单'时显示功能列表，支持查进度功能",
+    "1.0.4",
+)
 class MenuPlugin(Star):
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
-        # 从配置文件中读取查询地址
-        self.query_url = self._load_config()
-
-    def _load_config(self):
-        '''加载配置文件'''
-        config_path = os.path.join("data", "config", "astrbot_plugin_menu.yaml")
-        default_config_path = os.path.join(os.path.dirname(__file__), "config.yaml.template")
-        
-        # 如果配置文件不存在，尝试从模板创建
-        if not os.path.exists(config_path):
-            if os.path.exists(default_config_path):
-                try:
-                    with open(default_config_path, 'r', encoding='utf-8') as f:
-                        config = yaml.safe_load(f)
-                        return config.get("query_url", "")
-                except Exception as e:
-                    logger.error(f"读取配置模板失败：{e}")
-                    return ""
-            return ""
-        
-        # 读取配置文件
-        try:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = yaml.safe_load(f)
-                return config.get("query_url", "")
-        except Exception as e:
-            logger.error(f"读取配置文件失败：{e}")
-            return ""
+        self.config = config
+        # 从配置中读取查询地址
+        self.query_url = getattr(config, "query_url", "")
+        logger.info(f"菜单插件配置加载完成: query_url={self.query_url}")
 
     @filter.command("菜单")
     async def show_menu(self, event: AstrMessageEvent):
@@ -83,7 +64,7 @@ class MenuPlugin(Star):
         
         # 检查配置
         if not self.query_url:
-            yield event.plain_result("❌ 查询地址未配置，请创建 data/config/astrbot_plugin_menu.yaml 文件并设置 query_url")
+            yield event.plain_result("❌ 查询地址未配置，请在插件配置中设置 query_url")
             return
         
         # 检查手机号
