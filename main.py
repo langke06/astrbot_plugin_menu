@@ -78,14 +78,27 @@ class MenuPlugin(Star):
             return
         
         logger.info(f"用户 {user_name} 查询手机号 {phone} 的进度")
+        logger.info(f"请求URL: {self.query_url}, 参数: act=cd, userName={phone}")
         
         try:
-            # 发送请求
+            # 发送请求 - 使用表单格式
             async with aiohttp.ClientSession() as session:
-                params = {"act": "cd"}
-                data = {"userName": phone}
+                # 构建完整URL
+                url = self.query_url
+                if "?" not in url:
+                    url += "?act=cd"
+                elif not url.endswith("?"):
+                    url += "&act=cd"
+                else:
+                    url += "act=cd"
                 
-                async with session.post(self.query_url, params=params, data=data, timeout=30) as resp:
+                # 使用表单数据
+                from aiohttp import FormData
+                form = FormData()
+                form.add_field("userName", phone)
+                
+                logger.info(f"实际请求URL: {url}")
+                async with session.post(url, data=form, timeout=30) as resp:
                     if resp.status != 200:
                         yield event.plain_result(f"❌ 查询失败，服务器返回状态码：{resp.status}")
                         return
