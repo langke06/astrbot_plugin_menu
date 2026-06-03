@@ -1,5 +1,5 @@
 name: astrbot_plugin_menu
-desc: 一个简单的菜单插件，支持下单和查进度功能
+desc: 菜单插件，支持下单和查进度功能
 author: langke06
-version: 1.0.9
+version: 1.1.0
 repo: https://github.com/langke06/astrbot_plugin_menu
