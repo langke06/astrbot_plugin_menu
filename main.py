@@ -12,7 +12,7 @@ QUERY_URL = "http://nbwk.online/api/index.php?act=cd"
     "astrbot_plugin_menu",
     "langke06",
     "菜单插件，支持下单、查进度和关键词监控功能",
-    "1.2.3",
+    "1.2.4",
 )
 class MenuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -226,18 +226,26 @@ class MenuPlugin(Star):
 时间: {event.message_obj.timestamp}"""
 
             try:
-                # 构建 unified_msg_origin
+                # 获取当前消息的 umo 作为参考
+                current_umo = event.unified_msg_origin
+                logger.info(f"当前消息UMO: {current_umo}")
+                
+                # 解析当前UMO获取平台名
                 # 格式: platform:message_type:session_id
-                # message_type: FriendMessage (私聊) 或 GroupMessage (群聊)
+                platform_name = current_umo.split(":")[0] if ":" in current_umo else "aiocqhttp"
+                
+                # 构建目标UMO
                 if self.alert_target.startswith("group:"):
                     target_id = self.alert_target.replace("group:", "")
-                    umo = f"aiocqhttp:GroupMessage:{target_id}"
+                    umo = f"{platform_name}:GroupMessage:{target_id}"
                 elif self.alert_target.startswith("qq:"):
                     target_id = self.alert_target.replace("qq:", "")
-                    umo = f"aiocqhttp:FriendMessage:{target_id}"
+                    umo = f"{platform_name}:FriendMessage:{target_id}"
                 else:
                     # 默认作为用户ID发送（私聊）
-                    umo = f"aiocqhttp:FriendMessage:{self.alert_target}"
+                    umo = f"{platform_name}:FriendMessage:{self.alert_target}"
+                
+                logger.info(f"发送警告到UMO: {umo}")
                 
                 # 使用 context.send_message 发送
                 from astrbot.api.event import MessageChain
